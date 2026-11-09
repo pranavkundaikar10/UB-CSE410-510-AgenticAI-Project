@@ -1,0 +1,6 @@
+# Keep LF everywhere so checkouts are identical on Windows, macOS and Linux.
+* text=auto eol=lf
+
+# Generated data is checksummed (fixtures/manifest.json): never convert line endings.
+fixtures/** -text
+evaluation/gold/** -text

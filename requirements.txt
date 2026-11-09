@@ -1,0 +1,6 @@
+# Direct dependencies, pinned to the versions installed and tested (Python 3.14, Windows).
+langgraph==1.2.20
+pydantic==2.14.3
+openai==3.48.0
+python-dotenv==1.2.4
+pytest==9.2.0

@@ -1,0 +1,33 @@
+{
+  "topology_id": "checkout-v1",
+  "services": [
+    {
+      "name": "edge-lb",
+      "host": "lb-01",
+      "role": "load balancer; writes access logs"
+    },
+    {
+      "name": "checkout-api",
+      "host": "app-01",
+      "role": "application service",
+      "depends_on": [
+        "orders-db"
+      ],
+      "db_pool": {
+        "name": "orders-db",
+        "max": 20
+      },
+      "data_volume": "/var/lib/checkout"
+    },
+    {
+      "name": "orders-db",
+      "host": "db-01",
+      "role": "PostgreSQL database"
+    },
+    {
+      "name": "deployer",
+      "host": "ci-01",
+      "role": "deployment pipeline for checkout-api"
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "manifest_version": "1.0.0",
+  "topology_id": "checkout-v1",
+  "incidents": [
+    {
+      "incident_id": "INC-001",
+      "title": "Elevated 503 responses on checkout-api",
+      "topology_id": "checkout-v1",
+      "window_start": "2026-10-06T14:00:00.000Z",
+      "window_end": "2026-10-06T15:00:00.000Z",
+      "logs": {
+        "path": "incidents/INC-001/logs.jsonl",
+        "sha256": "dfcd7c4d9db5c393af5c6047c01991ffae3ae82ef475f4eecebd19f55a7e8489"
+      },
+      "metrics": {
+        "path": "incidents/INC-001/metrics.csv",
+        "sha256": "72fe28ff64c3ae10e0e1a152dfcb78eaf0702185f33cfe448de661a7dedf1c40"
+      }
+    },
+    {
+      "incident_id": "INC-002",
+      "title": "Elevated 500 responses on checkout",
+      "topology_id": "checkout-v1",
+      "window_start": "2026-10-09T03:00:00.000Z",
+      "window_end": "2026-10-09T04:00:00.000Z",
+      "logs": {
+        "path": "incidents/INC-002/logs.jsonl",
+        "sha256": "bd3856aa40fc3810d9e214c8eb71eff73788ad142dad2b1ff73c1fba55de18d3"
+      },
+      "metrics": {
+        "path": "incidents/INC-002/metrics.csv",
+        "sha256": "7dad9412eef531ef9c443fd1462d31d787542cd83cec055d9e01e91f668f8c4f"
+      }
+    },
+    {
+      "incident_id": "INC-003",
+      "title": "Elevated 504 responses and slow checkout",
+      "topology_id": "checkout-v1",
+      "window_start": "2026-10-13T18:00:00.000Z",
+      "window_end": "2026-10-13T19:00:00.000Z",
+      "logs": {
+        "path": "incidents/INC-003/logs.jsonl",
+        "sha256": "01394051b8f21d241dd4e0730b9fea891e1d844e1ca82c6b782250b730ca61b4"
+      },
+      "metrics": {
+        "path": "incidents/INC-003/metrics.csv",
+        "sha256": "bf0d24e7a7be0855408a0e1ae3ce3d92baaa041802aa0e45a566d62552b2bd60"
+      }
+    },
+    {
+      "incident_id": "INC-004",
+      "title": "Elevated 500 responses on POST /checkout",
+      "topology_id": "checkout-v1",
+      "window_start": "2026-10-16T11:00:00.000Z",
+      "window_end": "2026-10-16T12:00:00.000Z",
+      "logs": {
+        "path": "incidents/INC-004/logs.jsonl",
+        "sha256": "fcd0b8b4720ad7412233b1dabd9c2798766e29f850d3517ad2bb53a9237f3ec1"
+      },
+      "metrics": {
+        "path": "incidents/INC-004/metrics.csv",
+        "sha256": "a0935843875b5473ef22d7546a241e99a94e90c7ce77831086d06c22f04e0d18"
+      }
+    },
+    {
+      "incident_id": "INC-005",
+      "title": "Brief 502 spike and checkout-api restart",
+      "topology_id": "checkout-v1",
+      "window_start": "2026-10-20T22:00:00.000Z",
+      "window_end": "2026-10-20T23:00:00.000Z",
+      "logs": {
+        "path": "incidents/INC-005/logs.jsonl",
+        "sha256": "7b2a2af2501472a0092f78a941f7f3b0533351dc458d229a3a09b63cbd08811e"
+      },
+      "metrics": {
+        "path": "incidents/INC-005/metrics.csv",
+        "sha256": "27788e06e87985bec897d9bcf3da596bef8e6419449a5e6b92c0c6e90f98c61e"
+      }
+    }
+  ]
+}
