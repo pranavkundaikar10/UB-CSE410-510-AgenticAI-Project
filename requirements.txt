@@ -1,4 +1,4 @@
-# Direct dependencies, pinned to the versions installed and tested (Python 3.14, Windows).
+# Direct dependencies, pinned to the versions installed and tested.
 langgraph==1.2.20
 pydantic==2.14.3
 openai==3.48.0
