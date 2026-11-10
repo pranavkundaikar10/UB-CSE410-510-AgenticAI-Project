@@ -21,11 +21,15 @@ not measured cost claims. FakeLLM results are scripted and do not establish accu
 
 Subsequent sections describe intended final-project behavior, not a claim that the full
 proposal is implemented. Citation validation checks evidence provenance and status rules;
-it does not prove semantic diagnostic correctness. A follow-up real-provider CLI smoke
-test used configured credentials, but the gateway URL still contained the example
-hostname `your-gateway.example`. DNS resolution failed even with network access enabled;
-the run returned a validated inconclusive partial after two model attempts and zero
-tool attempts. No provider response was received, so live diagnosis remains unverified.
+it does not prove semantic diagnostic correctness. A real-provider CLI smoke test passed
+on 2026-11-09 through the configured BullsAI gateway, preserving the existing key and
+model and enabling the supported JSON-response option. A guided question produced a
+validated, unapproved connection-pool-exhaustion draft after six model attempts and
+five tool calls spanning logs, metrics and runbooks. Earlier attempts demonstrated
+empty-content budget exhaustion and rejection of a report without log citations.
+Reasoning fields were never dispatched as actions, and safeguards were not relaxed.
+See the README for the exact successful command and limitations: this single guided
+development incident is not a held-out evaluation or a proof of diagnostic accuracy.
 
 **Scope:** an offline simulation on synthetic incident bundles with one fixed application topology. It covers four incident families: connection-pool exhaustion, disk exhaustion, dependency failure and application errors after a deployment. Anything outside these families must end in abstention. We make no production-readiness claim. This is a proposed design and does not claim that its safeguards or tests are already built.
 

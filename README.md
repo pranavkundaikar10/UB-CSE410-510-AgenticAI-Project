@@ -79,13 +79,24 @@ check; the investigation command above is the end-to-end smoke test. Real-provid
 responses can use the budget without diagnosing an incident. A successful diagnostic
 claim requires report validation, and every returned report remains unapproved.
 
-The real-provider CLI smoke test was attempted after credentials were configured.
-It returned `model_failed`, exit 1, with a validated inconclusive partial after two
-model attempts and zero tool attempts. The configured `LLM_BASE_URL` still used the
-example hostname `your-gateway.example`; DNS resolution failed even with network
-access enabled. No provider response was received, so **a live-model investigation
-has not been verified**. Set the intended gateway URL and rerun the command above.
-The adapter is also covered through the production workflow with a stubbed client.
+**Live smoke verified on 2026-11-09 through the configured BullsAI gateway**, keeping
+the existing API key and model. Set `LLM_JSON_MODE=1` for this gateway: without it,
+the tested investigation replies contained reasoning but empty final message text.
+The workflow never interprets reasoning fields as actions. An initial JSON-mode run
+failed citation validation after empty log searches; its repair requested another tool
+and was correctly rejected. A subsequent guided smoke used the command below, called
+all three read tools (five calls total), and returned `draft_ready`, exit 0, with a
+validated `connection_pool_exhaustion` draft on model attempt six:
+
+```bash
+LLM_JSON_MODE=1 python -m triage investigate INC-001 --question "What caused the 503 errors? First query logs over the full incident window without event, contains, service or level filters so you obtain real log evidence IDs. Use metrics to distinguish pool exhaustion from slow database queries, search the matching runbook, then submit a final_report citing returned log, metric and runbook IDs. Keep within six model attempts." --mode real-provider
+```
+
+The live run's trace is identified by run ID `0eef42606dd045b6be82d85da6219368`; runtime
+traces remain local and ignored by Git. This is one guided development-incident smoke
+test, not a held-out accuracy measurement. Validation establishes citation provenance
+and report structure; the draft's claims and recommendations still require human review.
+Later model runs may reach a different terminal outcome within the same hard limits.
 Missing configuration returns `config_error`, exit 2, and a trace with zero attempts.
 
 Optional `--start` and `--end` accept ISO-8601 timestamps with time zones, defaulting
