@@ -287,7 +287,7 @@ def test_gateway_success_sends_expected_request() -> None:
         return SimpleNamespace(choices=[SimpleNamespace(message=message)],
                                usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5))
 
-    llm = GatewayLLM(_settings(), client=_client(create))
+    llm = GatewayLLM(_settings(LLM_JSON_MODE=False), client=_client(create))
     raw = llm.complete([{"role": "user", "content": "hi"}])
     assert isinstance(parse_action(raw), ToolCallAction)
     assert seen["model"] == "test-model" and seen["temperature"] == 0

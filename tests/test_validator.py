@@ -22,6 +22,7 @@ def _inc001_ledger() -> dict[str, Evidence]:
     return ledger_from(
         query_logs("INC-001", start, end, event="db_pool_timeout", limit=3),
         query_metrics("INC-001", "db_pool_active", start, end),
+        query_metrics("INC-001", "db_query_latency_p95_ms", start, end),
         search_runbooks("timed out waiting for a connection from pool", top_k=2),
     )
 
@@ -53,8 +54,10 @@ def _report(incident_id: str, cite: list[str], **overrides: Any) -> DraftReport:
 @pytest.fixture(scope="module")
 def inc001() -> tuple[RunState, list[str]]:
     ledger = _inc001_ledger()
+    # The latency metric goes last: a pool diagnosis must cite it as rule-out evidence.
     complete = [_ids(ledger, "log")[0], _ids(ledger, "metric")[0],
-                _runbook_id(ledger, "connection_pool_exhaustion")]
+                _runbook_id(ledger, "connection_pool_exhaustion"),
+                "INC-001:M:db_query_latency_p95_ms:1400-1500"]
     return build_state("INC-001", ledger), complete
 
 
