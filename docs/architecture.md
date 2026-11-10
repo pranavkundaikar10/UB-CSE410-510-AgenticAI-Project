@@ -21,8 +21,11 @@ not measured cost claims. FakeLLM results are scripted and do not establish accu
 
 Subsequent sections describe intended final-project behavior, not a claim that the full
 proposal is implemented. Citation validation checks evidence provenance and status rules;
-it does not prove semantic diagnostic correctness. Live gateway execution was not verified
-at this checkpoint because no gateway credentials/configuration were available.
+it does not prove semantic diagnostic correctness. A follow-up real-provider CLI smoke
+test used configured credentials, but the gateway URL still contained the example
+hostname `your-gateway.example`. DNS resolution failed even with network access enabled;
+the run returned a validated inconclusive partial after two model attempts and zero
+tool attempts. No provider response was received, so live diagnosis remains unverified.
 
 **Scope:** an offline simulation on synthetic incident bundles with one fixed application topology. It covers four incident families: connection-pool exhaustion, disk exhaustion, dependency failure and application errors after a deployment. Anything outside these families must end in abstention. We make no production-readiness claim. This is a proposed design and does not claim that its safeguards or tests are already built.
 

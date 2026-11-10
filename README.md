@@ -79,10 +79,14 @@ check; the investigation command above is the end-to-end smoke test. Real-provid
 responses can use the budget without diagnosing an incident. A successful diagnostic
 claim requires report validation, and every returned report remains unapproved.
 
-No gateway credentials were available during checkpoint verification. The real
-provider adapter was exercised through the production workflow with a stubbed client;
-**a live-model investigation has not been verified**. Missing configuration returns
-`config_error`, exit 2, and a trace with zero model/tool attempts.
+The real-provider CLI smoke test was attempted after credentials were configured.
+It returned `model_failed`, exit 1, with a validated inconclusive partial after two
+model attempts and zero tool attempts. The configured `LLM_BASE_URL` still used the
+example hostname `your-gateway.example`; DNS resolution failed even with network
+access enabled. No provider response was received, so **a live-model investigation
+has not been verified**. Set the intended gateway URL and rerun the command above.
+The adapter is also covered through the production workflow with a stubbed client.
+Missing configuration returns `config_error`, exit 2, and a trace with zero attempts.
 
 Optional `--start` and `--end` accept ISO-8601 timestamps with time zones, defaulting
 independently to the registered incident window. The requested window must be ordered
