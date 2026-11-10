@@ -15,7 +15,6 @@ import httpx2
 import openai
 import pytest
 
-from conftest import drive
 from triage import cli
 from triage.config import MAX_MODEL_TURNS, MAX_TOOL_CALLS, Settings, require_llm_settings
 from triage.errors import ConfigError, SchemaError, TransientLLMError
@@ -23,6 +22,17 @@ from triage.fake_llm import FakeLLM
 from triage.llm import GatewayLLM, build_system_prompt, build_user_message, parse_action
 from triage.schemas import FinalReportAction, ToolCallAction
 from triage.validator import validate_report
+from triage.graph import investigate
+
+
+@pytest.fixture
+def drive(tmp_path):
+    return lambda llm, incident: investigate(incident, "What caused this incident?", llm=llm,
+        mode="offline-scripted", trace_dir=tmp_path)
+
+
+def trace_events(out):
+    return [json.loads(line) for line in out.trace_path.read_text().splitlines()]
 
 SECRET = "sk-test-SECRET-key-0123456789"
 TOOL_CALL = {"type": "tool_call", "tool": "query_logs",
@@ -133,9 +143,9 @@ EXPECTED = {
 
 
 @pytest.mark.parametrize("incident_id", sorted(EXPECTED))
-def test_fake_llm_script_produces_valid_report(incident_id: str) -> None:
+def test_fake_llm_script_produces_valid_report(incident_id: str, drive) -> None:
     out = drive(FakeLLM(), incident_id)
-    assert out.report is not None and out.halt_reason is None and not out.budget_exhausted
+    assert out.report is not None and out.state["halt_reason"] is None and out.status == "draft_ready"
     status, family = EXPECTED[incident_id]
     assert (out.report.status, out.report.family) == (status, family)
     result = validate_report(out.report, out.state)
@@ -148,65 +158,62 @@ def test_fake_llm_script_produces_valid_report(incident_id: str) -> None:
 
 
 @pytest.mark.parametrize("incident_id", sorted(EXPECTED))
-def test_fake_llm_searches_runbooks_once_before_final(incident_id: str) -> None:
+def test_fake_llm_searches_runbooks_once_before_final(incident_id: str, drive) -> None:
     out = drive(FakeLLM(), incident_id)
-    kinds = [(kind, getattr(action, "tool", None)) for kind, action, _ in out.transcript]
-    assert kinds[-1][0] == "final_report"
-    tools = [tool for kind, tool in kinds if kind == "tool"]
+    assert trace_events(out)[-1]["outcome"] == "draft_ready"
+    tools = [event["tool"] for event in trace_events(out) if event["event"] == "tool"]
     assert tools.count("search_runbooks") == 1
     assert tools[-1] == "search_runbooks"
 
 
-def test_fake_llm_is_deterministic() -> None:
-    first = [m["content"] for m in drive(FakeLLM(), "INC-003").messages]
-    second = [m["content"] for m in drive(FakeLLM(), "INC-003").messages]
+def test_fake_llm_is_deterministic(drive) -> None:
+    first = [m["content"] for m in drive(FakeLLM(), "INC-003").state["messages"]]
+    second = [m["content"] for m in drive(FakeLLM(), "INC-003").state["messages"]]
     assert first == second
 
 
-def test_fake_llm_returns_json_strings() -> None:
+def test_fake_llm_returns_json_strings(drive) -> None:
     out = drive(FakeLLM(), "INC-001")
-    for msg in out.messages:
+    for msg in out.state["messages"]:
         if msg["role"] == "assistant":
             assert isinstance(msg["content"], str)
             json.loads(msg["content"])
 
 
-def test_scenario_always_tool_call_never_finishes() -> None:
+def test_scenario_always_tool_call_never_finishes(drive) -> None:
     out = drive(FakeLLM("always_tool_call"), "INC-001")
-    assert out.budget_exhausted and out.report is None
+    assert out.status == "budget_exceeded" and out.report.status == "budget_exceeded"
+    assert out.report.family == "none" and validate_report(out.report, out.state).ok
     # The 6-turn cap binds before the 7-call cap: one call per turn.
     assert out.state["model_turns"] == MAX_MODEL_TURNS
     assert out.state["tool_calls"] == MAX_MODEL_TURNS < MAX_TOOL_CALLS
-    assert all(k == "tool" for k, *_ in out.transcript)
+    assert sum(e["event"] == "tool" for e in trace_events(out)) == MAX_MODEL_TURNS
 
 
-def test_scenario_bad_json_once_recovers() -> None:
+def test_scenario_bad_json_once_recovers(drive) -> None:
     out = drive(FakeLLM("bad_json_once"), "INC-001")
-    assert out.transcript[0][0] == "schema_error"
-    assert sum(1 for k, *_ in out.transcript if k == "schema_error") == 1
+    assert sum(e["event"] == "parse" and e["outcome"] == "invalid_action" for e in trace_events(out)) == 1
     assert out.report is not None and validate_report(out.report, out.state).ok
 
 
-def test_scenario_request_export_halts() -> None:
+def test_scenario_request_export_halts(drive) -> None:
     out = drive(FakeLLM("request_export"), "INC-001")
-    assert out.halt_reason and "export_report" in out.halt_reason
+    assert out.status == "halted" and "export_report" in out.state["halt_reason"]
     assert out.state["tool_calls"] == 0
 
 
-def test_scenario_cite_fabricated_fails_validation() -> None:
+def test_scenario_cite_fabricated_fails_validation(drive) -> None:
     out = drive(FakeLLM("cite_fabricated"), "INC-001")
-    assert out.report is not None
-    result = validate_report(out.report, out.state)
-    assert not result.ok and any("INC-001:L9999" in e for e in result.errors)
+    assert out.report is None and out.status == "validation_failed"
+    assert any("INC-001:L9999" in e for e in out.state["validation_errors"])
+    assert out.state["repairs"] == 1
 
 
-def test_scenario_follow_injection_is_halted() -> None:
+def test_scenario_follow_injection_is_halted(drive) -> None:
     out = drive(FakeLLM("follow_injection"), "INC-002")
-    kinds = [k for k, *_ in out.transcript]
-    assert kinds == ["tool", "halt"]
-    result = out.transcript[0][2]
-    assert result.evidence[0].untrusted_flags  # it saw flagged content...
-    assert out.halt_reason and "export_report" in out.halt_reason  # ...and was stopped
+    assert out.state["tool_calls"] == 1 and out.status == "halted"
+    assert any(ev.untrusted_flags for ev in out.state["evidence_ledger"].values())
+    assert "export_report" in out.state["halt_reason"]  # followed injection, then blocked
 
 
 # --------------------------------------------------------------------------- #
@@ -297,6 +304,27 @@ def test_gateway_json_mode() -> None:
 
     GatewayLLM(_settings(LLM_JSON_MODE=True), client=_client(create)).complete([])
     assert seen["response_format"] == {"type": "json_object"}
+
+
+def test_gateway_does_not_reuse_stale_usage_or_invent_zero() -> None:
+    responses = iter([
+        SimpleNamespace(usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5)),
+        SimpleNamespace(usage=None),
+        SimpleNamespace(usage=SimpleNamespace(prompt_tokens=7)),
+    ])
+
+    def create(**kwargs):
+        result = next(responses)
+        result.choices = [SimpleNamespace(message=SimpleNamespace(content="{}"))]
+        return result
+
+    llm = GatewayLLM(_settings(), client=_client(create))
+    llm.complete([])
+    assert llm.last_usage == {"prompt_tokens": 10, "completion_tokens": 5}
+    llm.complete([])
+    assert llm.last_usage is None
+    llm.complete([])
+    assert llm.last_usage == {"prompt_tokens": 7, "completion_tokens": None}
 
 
 def test_gateway_scrubs_key_from_reply() -> None:

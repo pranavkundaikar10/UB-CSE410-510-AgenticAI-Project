@@ -4,6 +4,26 @@
 
 **Team:** Pranav Kundaikar; Shubhojyoti Datta; Pooja Nemade; Jay Pathare
 
+## Checkpoint implementation status (2026-11-09)
+
+The design below is the historical midterm proposal. The running checkpoint now has a
+single bounded LangGraph in `src/triage/graph.py`, three read tools, evidence validation,
+one report repair, an investigation CLI and per-run JSONL traces. See [README](../README.md)
+for the implemented graph, setup, demos, exit codes and verification limitations.
+
+The checkpoint stops at a validated **unapproved draft**, or a clearly labeled failure.
+It does not implement SQLite, HUMAN_REVIEW, approve/edit/reject/expiry, export persistence,
+the held-out evaluation harness or the fixed-pipeline baseline. The proposed eighth
+export attempt is not executable; the checkpoint permits at most seven read attempts.
+Model attempts include retries and repair, capped at six. One-tool-call-per-action is
+the implemented contract. JSONL records available usage; unknown usage and cost are null,
+not measured cost claims. FakeLLM results are scripted and do not establish accuracy.
+
+Subsequent sections describe intended final-project behavior, not a claim that the full
+proposal is implemented. Citation validation checks evidence provenance and status rules;
+it does not prove semantic diagnostic correctness. Live gateway execution was not verified
+at this checkpoint because no gateway credentials/configuration were available.
+
 **Scope:** an offline simulation on synthetic incident bundles with one fixed application topology. It covers four incident families: connection-pool exhaustion, disk exhaustion, dependency failure and application errors after a deployment. Anything outside these families must end in abstention. We make no production-readiness claim. This is a proposed design and does not claim that its safeguards or tests are already built.
 
 ---

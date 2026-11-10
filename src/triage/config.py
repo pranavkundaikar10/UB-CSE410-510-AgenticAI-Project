@@ -13,7 +13,7 @@ from triage.paths import REPO_ROOT
 
 # Budgets (docs/architecture.md sections 3 and 4).
 MAX_MODEL_TURNS = 6
-MAX_TOOL_CALLS = 7  # read-tool attempts; one further attempt is reserved for export
+MAX_TOOL_CALLS = 7  # read-tool attempts; export is deferred in this checkpoint
 MAX_LOG_RESULTS = 50
 MAX_MESSAGE_CHARS = 300
 

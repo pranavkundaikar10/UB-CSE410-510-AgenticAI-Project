@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 import re
+from datetime import datetime
 from collections.abc import Iterator
 from typing import Any, Self
 
@@ -77,11 +78,16 @@ def check_tool_call(action: ToolCallAction, state: RunState) -> GuardDecision:
         return _refuse("tool budget exhausted")
 
     try:
-        spec.args_model.model_validate(
+        args = spec.args_model.model_validate(
             action.args, context={"entry": get_incident(state["incident_id"])}
         )
     except ValidationError as exc:
         return _refuse(format_validation_error(exc))
+    if hasattr(args, "start") and (
+        args.start < datetime.fromisoformat(state["window_start"])
+        or args.end > datetime.fromisoformat(state["window_end"])
+    ):
+        return _refuse("tool window must lie inside the requested investigation window")
     return _allow()
 
 

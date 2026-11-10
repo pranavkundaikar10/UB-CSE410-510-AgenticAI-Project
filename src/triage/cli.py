@@ -31,6 +31,16 @@ def build_parser() -> argparse.ArgumentParser:
         description="Send one tiny prompt through the configured gateway (.env or environment) "
         "and print the model name, latency and whether the reply parsed as JSON.",
     )
+    investigation = sub.add_parser("investigate", help="investigate an incident and produce a validated draft")
+    investigation.add_argument("incident_id", help="registered incident, e.g. INC-001")
+    investigation.add_argument("--question", required=True)
+    investigation.add_argument("--start", help="ISO-8601 with zone; defaults to incident start")
+    investigation.add_argument("--end", help="ISO-8601 with zone; defaults to incident end")
+    investigation.add_argument("--mode", choices=["real-provider", "offline-scripted"],
+                               default="real-provider")
+    investigation.add_argument("--scenario", choices=["normal", "always_tool_call", "bad_json_once",
+        "request_export", "cite_fabricated", "follow_injection"], default="normal",
+        help="scripted test scenario; only valid with --mode offline-scripted")
     return parser
 
 
@@ -64,5 +74,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "llm-check":
         return llm_check()
+    if args.command == "investigate":
+        if args.mode != "offline-scripted" and args.scenario != "normal":
+            parser.error("--scenario requires --mode offline-scripted")
+        from triage.graph import investigate
+        from triage.fake_llm import FakeLLM
+
+        print(f"Mode: {args.mode}")
+        if args.mode == "offline-scripted":
+            print("FakeLLM uses incident-specific scripted answers; this does not measure diagnostic accuracy.")
+        try:
+            outcome = investigate(args.incident_id, args.question,
+                start=args.start, end=args.end, mode=args.mode,
+                llm=FakeLLM(args.scenario) if args.mode == "offline-scripted" else None)
+        except OSError:
+            print("error: could not create or write the run trace in logs/", file=sys.stderr)
+            return 1
+        print(outcome.render())
+        if outcome.status == "draft_ready":
+            return 0
+        return 2 if outcome.status in ("invalid_input", "config_error") else 1
     parser.print_help()
     return 0

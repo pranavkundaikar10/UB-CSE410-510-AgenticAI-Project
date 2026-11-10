@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "triage"
 version = "0.1.0"
-description = "Incident Triage Agent: LangGraph agent that drafts cited, human-approved incident reports from synthetic fixtures."
+description = "Incident Triage Agent: bounded LangGraph investigations that draft cited reports for human review."
 requires-python = ">=3.11"
 dependencies = [
     "langgraph>=1.2.20",

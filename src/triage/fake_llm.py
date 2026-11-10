@@ -132,6 +132,8 @@ def _observations(messages: list[dict[str, Any]]) -> tuple[int, list[Observed]]:
 class FakeLLM(LLM):
     """Deterministic stand-in for a real model, driven only by the conversation so far."""
 
+    model = "FakeLLM (incident-specific scripts)"
+
     def __init__(self, scenario: Scenario = "normal") -> None:
         self.scenario = scenario
         self.calls = 0

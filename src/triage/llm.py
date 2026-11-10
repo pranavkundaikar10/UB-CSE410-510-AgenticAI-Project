@@ -52,7 +52,7 @@ class GatewayLLM(LLM):
         self._settings = settings or require_llm_settings()
         self.model: str = self._settings.LLM_MODEL or ""
         self.json_mode: bool = self._settings.LLM_JSON_MODE
-        self.last_usage: dict[str, int] | None = None
+        self.last_usage: dict[str, int | None] | None = None
         if client is None:
             from openai import OpenAI
 
@@ -74,6 +74,7 @@ class GatewayLLM(LLM):
     def complete(self, messages: list[dict[str, Any]]) -> str:
         import openai
 
+        self.last_usage = None
         kwargs: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0}
         if self.json_mode:
             kwargs["response_format"] = {"type": "json_object"}
@@ -94,8 +95,8 @@ class GatewayLLM(LLM):
 
         usage = getattr(response, "usage", None)
         if usage is not None:
-            self.last_usage = {"prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
-                               "completion_tokens": getattr(usage, "completion_tokens", 0) or 0}
+            self.last_usage = {"prompt_tokens": getattr(usage, "prompt_tokens", None),
+                               "completion_tokens": getattr(usage, "completion_tokens", None)}
         choices = getattr(response, "choices", None) or []
         content = choices[0].message.content if choices else None
         return self._scrub(content or "")
