@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from triage import __version__
 from triage.errors import ConfigError, TransientLLMError
+
+if TYPE_CHECKING:  # graph pulls in langgraph; keep it out of the llm-check path
+    from triage.graph import Outcome
 
 LLM_CHECK_MESSAGES = [
     {"role": "system", "content": "You are a connectivity check. Reply with one JSON object only."},
@@ -41,7 +46,48 @@ def build_parser() -> argparse.ArgumentParser:
     investigation.add_argument("--scenario", choices=["normal", "always_tool_call", "bad_json_once",
         "request_export", "cite_fabricated", "follow_injection"], default="normal",
         help="scripted test scenario; only valid with --mode offline-scripted")
+    investigation.add_argument("--progress", action="store_true",
+        help="force the per-step status lines on stderr (they are on by default when stderr is a terminal)")
+    investigation.add_argument("--quiet", action="store_true",
+        help="turn the status lines off; wins over --progress")
     return parser
+
+
+def _print_progress(line: str) -> None:
+    print(line, file=sys.stderr, flush=True)
+
+
+def _show_progress(args: argparse.Namespace) -> bool:
+    """On for a terminal, off when piped or captured; --progress forces on, --quiet wins."""
+    if args.quiet:
+        return False
+    return args.progress or sys.stderr.isatty()
+
+
+def _use_color() -> bool:
+    return sys.stdout.isatty() and "NO_COLOR" not in os.environ
+
+
+_COLORS = {"SUCCESS": "32", "BLOCKED": "33", "FAILED": "31"}
+
+
+def verdict_line(outcome: Outcome, *, color: bool = False) -> str:
+    """The last stdout line. SUCCESS only means a validated, unapproved draft exists."""
+    report = outcome.report
+    if outcome.status == "draft_ready" and report is not None:
+        keyword = "SUCCESS"
+        if report.status == "diagnosed":
+            rest = f"validated draft ready for human review (diagnosed: {report.family})"
+        else:
+            rest = "validated inconclusive draft ready for human review"
+    elif outcome.status == "halted":
+        keyword, rest = "BLOCKED", "an unsafe action was stopped before it ran"
+    else:
+        keyword = "FAILED"
+        reason = outcome.state["halt_reason"]
+        rest = f"{outcome.status}: {reason}" if reason else outcome.status
+    shown = f"\033[{_COLORS[keyword]}m{keyword}\033[0m" if color else keyword
+    return f"{shown} - {rest}"
 
 
 def llm_check() -> int:
@@ -86,11 +132,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             outcome = investigate(args.incident_id, args.question,
                 start=args.start, end=args.end, mode=args.mode,
-                llm=FakeLLM(args.scenario) if args.mode == "offline-scripted" else None)
+                llm=FakeLLM(args.scenario) if args.mode == "offline-scripted" else None,
+                progress=_print_progress if _show_progress(args) else None)
         except OSError:
             print("error: could not create or write the run trace in logs/", file=sys.stderr)
             return 1
         print(outcome.render())
+        print(verdict_line(outcome, color=_use_color()))
         if outcome.status == "draft_ready":
             return 0
         return 2 if outcome.status in ("invalid_input", "config_error") else 1

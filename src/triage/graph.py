@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ from triage.guardrails import check_tool_call, flag_evidence, wrap_untrusted
 from triage.llm import (GatewayLLM, LLM, build_system_prompt, build_user_message,
                         extract_json_objects, parse_action)
 from triage.paths import LOGS_DIR
+from triage.progress import start_line
 from triage.schemas import DraftReport, FinalReportAction, RunState, ToolCallAction
 from triage.tools import READ_TOOLS
 from triage.tools.common import WindowArgs, format_validation_error
@@ -31,6 +33,7 @@ class WorkflowState(RunState):
     model_retry: int
     tool_retry: int
     repairs: int
+    empty_replies: int  # consecutive empty model replies
     validation_errors: list[str]
 
 
@@ -64,6 +67,31 @@ class Outcome:
         return "\n".join(lines)
 
 
+EMPTY_REPLY_REASON = ("The model returned empty message text twice. If your gateway returns "
+                      "reasoning without content, set LLM_JSON_MODE=1.")
+MAX_REPAIR_IDS_PER_KIND = 15
+
+
+def repair_message(state: WorkflowState) -> str:
+    """The one-shot repair request: the errors, the usable evidence IDs and the ground rules."""
+    by_kind: dict[str, list[str]] = {"log": [], "metric": [], "runbook": []}
+    for evidence_id, ev in state["evidence_ledger"].items():
+        if not ev.untrusted_flags:  # flagged items can't be cited anyway
+            by_kind[ev.kind].append(evidence_id)
+    groups = []
+    for kind, ids in by_kind.items():
+        shown = ", ".join(ids[:MAX_REPAIR_IDS_PER_KIND]) or "none"
+        if len(ids) > MAX_REPAIR_IDS_PER_KIND:
+            shown += f" (+{len(ids) - MAX_REPAIR_IDS_PER_KIND} more)"
+        groups.append(f"{kind}: {shown}")
+    return ("Repair the report once. Return only a final_report using evidence already returned. "
+            "Validation errors: " + "; ".join(state["validation_errors"]) + "\n"
+            "Evidence IDs you can cite - " + "; ".join(groups) + "\n"
+            "Tools cannot be called during repair; a tool call ends the run. If a required kind of "
+            "evidence is missing, return status inconclusive, family none, confidence <= 0.5, and say "
+            "what is missing; that is a valid outcome.")
+
+
 def build_graph(llm: LLM, trace: TraceWriter):
     """Compile explicit model → guard → execute → model / validate → repair edges."""
     def stop(s: WorkflowState, status: str, reason: str) -> dict[str, Any]:
@@ -74,11 +102,12 @@ def build_graph(llm: LLM, trace: TraceWriter):
             return stop(s, "budget_exceeded", "Model attempt budget exhausted.")
         s["model_turns"] += 1
         started = time.perf_counter()
+        json_mode = getattr(llm, "json_mode", None)  # None for models without the setting
         try:
             raw = llm.complete(s["messages"])
         except TransientLLMError:
             retry = s["model_retry"] == 0 and s["model_turns"] < MAX_MODEL_TURNS
-            trace.event("model", "transient_failure", s, retry=retry, usage=None, cost=None,
+            trace.event("model", "transient_failure", s, retry=retry, usage=None, cost=None, json_mode=json_mode,
                         duration_ms=(time.perf_counter() - started) * 1000)
             if s["model_turns"] >= MAX_MODEL_TURNS:
                 return stop(s, "budget_exceeded", "Model attempt budget exhausted during retry.")
@@ -86,16 +115,26 @@ def build_graph(llm: LLM, trace: TraceWriter):
                 return {"model_retry": 1, "route": "model"}
             return stop(s, "model_failed", "Model unavailable after one retry.")
         except ConfigError:
-            trace.event("model", "configuration_failure", s, usage=None, cost=None,
+            trace.event("model", "configuration_failure", s, usage=None, cost=None, json_mode=json_mode,
                         duration_ms=(time.perf_counter() - started) * 1000)
             return stop(s, "config_error", "Gateway rejected configuration; check LLM settings and access.")
         except Exception:
-            trace.event("model", "unexpected_failure", s, usage=None, cost=None,
+            trace.event("model", "unexpected_failure", s, usage=None, cost=None, json_mode=json_mode,
                         duration_ms=(time.perf_counter() - started) * 1000)
             return stop(s, "model_failed", "Unexpected model failure (details withheld to protect credentials).")
         trace.event("model", "completed", s, usage=getattr(llm, "last_usage", None), cost=None,
-                    response_chars=len(raw), duration_ms=(time.perf_counter() - started) * 1000)
+                    json_mode=json_mode, response_chars=len(raw),
+                    duration_ms=(time.perf_counter() - started) * 1000)
         s["messages"].append({"role": "assistant", "content": raw})
+        if raw.strip():
+            s["empty_replies"] = 0
+        else:
+            # Empty text still used a model attempt. Twice in a row means the gateway is not
+            # returning message content, and more turns would only burn the budget.
+            s["empty_replies"] += 1
+            trace.event("parse", "empty_reply", s, consecutive=s["empty_replies"])
+            if s["empty_replies"] >= 2:
+                return stop(s, "model_failed", EMPTY_REPLY_REASON)
         try:
             action = parse_action(raw)
         except SchemaError:
@@ -186,9 +225,7 @@ def build_graph(llm: LLM, trace: TraceWriter):
         return {"validation_errors": result.errors, "route": "repair"}
 
     def repair(s: WorkflowState) -> dict[str, Any]:
-        s["messages"].append({"role": "user", "content": "Repair the report once. Return only a "
-            "final_report using evidence already returned. Validation errors: " +
-            "; ".join(s["validation_errors"])})
+        s["messages"].append({"role": "user", "content": repair_message(s)})
         trace.event("repair", "requested", s)
         return {"repairs": 1, "route": "model"}
 
@@ -235,17 +272,22 @@ def build_graph(llm: LLM, trace: TraceWriter):
 
 def investigate(incident_id: str, question: str, *, llm: LLM | None = None,
                 start: str | None = None, end: str | None = None,
-                mode: str = "real-provider", trace_dir: Path = LOGS_DIR) -> Outcome:
-    """Validate input before model construction or dispatch. Failures also have traces."""
+                mode: str = "real-provider", trace_dir: Path = LOGS_DIR,
+                progress: Callable[[str], None] | None = None) -> Outcome:
+    """Validate input before model construction or dispatch. Failures also have traces.
+
+    `progress`, if given, receives one short status line per step (see triage.progress).
+    """
     run_id = uuid4().hex
     state: WorkflowState = dict(run_id=run_id, incident_id=incident_id, question=question,
         window_start="", window_end="", messages=[], evidence_ledger={}, model_turns=0,
         tool_calls=0, draft=None, status="running", halt_reason=None, approval=None,
         steps=[], action=None, route="model", model_retry=0, tool_retry=0, repairs=0,
-        validation_errors=[])
+        empty_replies=0, validation_errors=[])
     settings = getattr(llm, "_settings", None)
     trace = TraceWriter(trace_dir / f"{run_id}.jsonl", run_id, mode,
-                        getattr(llm, "model", None), (getattr(settings, "LLM_API_KEY", None),))
+                        getattr(llm, "model", None), (getattr(settings, "LLM_API_KEY", None),),
+                        progress=progress)
     try:
         trace.event("start", "running", state, incident_id=incident_id,
                     trace_limits={"string_chars": 2000, "list_items": 10, "object_keys": 60})
@@ -257,6 +299,7 @@ def investigate(incident_id: str, question: str, *, llm: LLM | None = None,
         except (UnknownIncident, ValidationError) as exc:
             reason = format_validation_error(exc) if isinstance(exc, ValidationError) else "Unknown incident ID."
             state.update(status="invalid_input", halt_reason=reason)
+            trace.note(start_line(incident_id, mode, None))
             trace.event("terminal", "invalid_input", state, reason=reason, report=None)
             return Outcome(state, trace.path)
         state.update(window_start=window.start.isoformat(), window_end=window.end.isoformat())
@@ -265,12 +308,14 @@ def investigate(incident_id: str, question: str, *, llm: LLM | None = None,
             try:
                 llm = GatewayLLM()
             except ConfigError:
+                trace.note(start_line(incident_id, mode, None))
                 state.update(status="config_error", halt_reason=
                     "Gateway configuration unavailable; set LLM_BASE_URL, LLM_API_KEY and LLM_MODEL (see .env.example).")
                 trace.event("terminal", "config_error", state, reason=state["halt_reason"], report=None)
                 return Outcome(state, trace.path)
             trace.model = llm.model
             trace.secrets += (llm._settings.LLM_API_KEY,)
+        trace.note(start_line(incident_id, mode, getattr(llm, "model", None)))
         state["messages"] = [dict(role="system", content=build_system_prompt()),
             dict(role="user", content=build_user_message(incident_id, question,
                  state["window_start"], state["window_end"]))]

@@ -232,14 +232,23 @@ or, when done, a final report (placeholders in <> must be replaced):
 2. Cite only evidence_ids returned by tools in this run. Never invent or reformat an ID.
 3. A "diagnosed" report must cite at least one log, one metric and one runbook evidence item,
    and a cited runbook's family must equal the report family.
-4. Before the final report, call search_runbooks once with your leading hypothesis.
-5. Use metrics to separate look-alike families (for example pool saturation versus slow
-   database queries with a normal pool) before committing to a family.
-6. If the evidence fits no family or cannot separate them, answer status "inconclusive" with
+4. Start with one query_logs call over the full incident window with no level, service, event
+   or contains filter, to get real log IDs. Narrow later only if needed. Zero results means
+   broaden the query, not that there was no incident.
+5. Before the final report, call search_runbooks once with your leading hypothesis.
+6. Rule-out evidence. Before diagnosing connection_pool_exhaustion, retrieve and cite
+   db_query_latency_p95_ms (it shows the database is healthy). Before diagnosing
+   dependency_failure, retrieve and cite both db_query_latency_p95_ms and db_pool_active
+   (the pool is not saturated). Use metrics to separate look-alike families.
+7. Every sentence in summary, root_cause and timeline must be backed by a cited evidence item.
+   Do not mention traffic surges, restarts, deploys or timestamps that are not in cited
+   evidence. Timeline entries must use real timestamps from cited items.
+8. If the evidence fits no family or cannot separate them, answer status "inconclusive" with
    family "none" and confidence <= 0.5, and say what evidence is missing or conflicting.
    You may only submit status "diagnosed" or "inconclusive".
-7. Budgets: at most {MAX_MODEL_TURNS} model turns and {MAX_TOOL_CALLS} tool calls per investigation.
-   Plan queries so you finish within them.
+9. Budgets: at most {MAX_MODEL_TURNS} model turns and {MAX_TOOL_CALLS} tool calls. Have a log, a
+   metric and a runbook by model turn 4 and submit the report by turn 5, so one repair turn
+   remains. A repair turn cannot call tools.
 """
 
 

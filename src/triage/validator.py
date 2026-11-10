@@ -2,12 +2,32 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 
 from triage.schemas import DraftReport, Evidence, RunState, StrictModel
 
 MAX_ID_ECHO = 80
 MAX_PARTIAL_CONFIDENCE = 0.5
+
+# Metric evidence IDs look like INC-003:M:db_pool_active:1800-1900.
+_METRIC_ID_RE = re.compile(r"^INC-\d{3}:M:([a-z0-9_]+):\d{4}-\d{4}$")
+
+# Metrics a diagnosis has to cite to rule out the look-alike family, with what each one shows.
+RULE_OUT_METRICS: dict[str, tuple[tuple[str, str], ...]] = {
+    "connection_pool_exhaustion": (("db_query_latency_p95_ms", "shows the database itself is healthy"),),
+    "dependency_failure": (("db_query_latency_p95_ms", "shows the database is slow"),
+                           ("db_pool_active", "shows the app pool is not saturated")),
+}
+
+
+def _cited_metric_names(cited: list[Evidence]) -> set[str]:
+    names = set()
+    for ev in cited:
+        match = _METRIC_ID_RE.match(ev.evidence_id) if ev.kind == "metric" else None
+        if match:
+            names.add(match.group(1))
+    return names
 
 
 class ValidationResult(StrictModel):
@@ -25,6 +45,10 @@ def validate_report(report: DraftReport, state: RunState) -> ValidationResult:
     """Check a schema-valid draft against this run's evidence ledger and status rules.
 
     Error strings are short and actionable; they are fed back to the model on repair.
+
+    The rule-out check for connection_pool_exhaustion and dependency_failure only confirms
+    that the required metrics were retrieved and cited. It does not check that their values
+    support the claim.
     """
     errors: list[str] = []
     ledger: dict[str, Evidence] = state["evidence_ledger"]
@@ -59,6 +83,12 @@ def validate_report(report: DraftReport, state: RunState) -> ValidationResult:
         if "runbook" in kinds and report.family != "none" and report.family not in runbook_families:
             errors.append(f"no cited runbook matches family {report.family!r}; cite that family's "
                           "runbook or change the family")
+        needed = RULE_OUT_METRICS.get(report.family, ())
+        have = _cited_metric_names(cited)
+        for metric, why in needed:
+            if metric not in have:
+                errors.append(f"a {report.family} diagnosis must cite metric {metric} ({why}); "
+                              "query it and cite the returned ID")
     elif report.family != "none":
         errors.append(f"status {report.status!r} must use family 'none'; only 'diagnosed' "
                       "reports name a family")

@@ -30,7 +30,8 @@ class Settings(BaseModel):
     LLM_API_KEY: str | None = Field(default=None, repr=False)
     LLM_MODEL: str | None = None
     LLM_TIMEOUT_S: float = Field(default=60.0, gt=0)
-    LLM_JSON_MODE: bool = False  # "1" sends response_format={"type": "json_object"}
+    # On by default: sends response_format={"type": "json_object"}. "0" turns it off.
+    LLM_JSON_MODE: bool = True
 
 
 OPTIONAL_VARS = ("LLM_TIMEOUT_S", "LLM_JSON_MODE")
